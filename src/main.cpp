@@ -9,6 +9,10 @@
 #include "argparse.hpp"
 #include "seeded_xorshift_128.hpp"
 
+#ifdef DDON_SIMD_ENABLED
+#include "simd_brute_force.h"
+#endif
+
 // Mutex for writing to stdout across multiple threads withotu conflict.
 std::mutex stdout_mutex;
 
@@ -46,7 +50,7 @@ inline bool bruteforce_millisecond(int ms, int key_depth) {
     // Go over the key buffer and try every index as as the starting position of the key.
     for (size_t i = 0; i < key_buffer.size()-KEY_LENGTH; i++)
     {
-        
+
         Camellia_Ekeygen(KEY_BIT_LENGTH, (unsigned char*)(key_buffer.data()+i), keytable);
         Camellia_DecryptBlock(KEY_BIT_LENGTH, ciphertext, keytable, plaintext);
 
@@ -79,6 +83,48 @@ inline bool bruteforce_millisecond(int ms, int key_depth) {
     }
 
     return false;
+}
+
+ int bruteforce(int start_time_seconds, int end_time_seconds, int key_depth, int num_threads) {
+
+    std::cout << "Starting bruteforcer with " << num_threads << " threads. Progress will be reported periodically.\n";
+
+    // Create a thread pool with all logical processors to perform the bruteforce in parallel.
+    ctpl::thread_pool pool(num_threads);
+
+    // Bruteforce every millisecond from start_time_seconds -> end_time_seconds.
+    for (auto i = start_time_seconds * 1000; i < end_time_seconds * 1000; i += num_threads) {
+        std::vector<std::future<bool>> results(num_threads);
+
+        // Queue all tasks on different threads.
+        for (int thread_idx = 0; thread_idx < num_threads; thread_idx++) {
+            results[thread_idx] = pool.push([thread_idx, i, key_depth](int id) {
+                return bruteforce_millisecond(i + thread_idx, key_depth);
+            });
+        }
+
+        // Await all tasks.
+        for (int thread_idx = 0; thread_idx < num_threads; thread_idx++) {
+            bool found_key = results[thread_idx].get();
+
+
+            if (found_key) {
+                const std::lock_guard<std::mutex> lock(stdout_mutex);
+                std::cout << "Found key, exiting." << "\n";
+                return 0;
+            }
+        }
+
+        // Log every 1,000 batches.
+        if (i % (num_threads * 1000) == 0) {
+            const std::lock_guard<std::mutex> lock(stdout_mutex);
+            std::cout << "Progress: " << i << "/" << end_time_seconds * 1000 << "ms (" << i/1000 << " work-seconds)" << "\n";
+        }
+    }
+
+
+    const std::lock_guard<std::mutex> lock(stdout_mutex);
+    std::cout << "Failed to find key within the given parameters\n";
 }
 
 int main(int argc, char** argv) {
@@ -149,44 +195,12 @@ int main(int argc, char** argv) {
         std::exit(1);
     }
 
-    std::cout << "Starting bruteforcer with " << num_threads << " threads. Progress will be reported periodically.\n";
+#ifdef DDON_SIMD_ENABLED
+    SimdBruteForce *sbf = new SimdBruteForce(num_threads);
+    sbf->brute_force(start_time_seconds, ciphertext, true);
+    return 0;
+#endif
 
-    // Create a thread pool with all logical processors to perform the bruteforce in parallel.
-    ctpl::thread_pool pool(num_threads);
-
-    // Bruteforce every millisecond from start_time_seconds -> end_time_seconds.
-    for (auto i = start_time_seconds * 1000; i < end_time_seconds * 1000; i += num_threads) {
-        std::vector<std::future<bool>> results(num_threads);
-
-        // Queue all tasks on different threads.
-        for (int thread_idx = 0; thread_idx < num_threads; thread_idx++) {
-            results[thread_idx] = pool.push([thread_idx, i, key_depth](int id) {
-                return bruteforce_millisecond(i + thread_idx, key_depth);
-            });
-        }
-
-        // Await all tasks.
-        for (int thread_idx = 0; thread_idx < num_threads; thread_idx++) {
-            bool found_key = results[thread_idx].get();
-
-
-            if (found_key) {
-                const std::lock_guard<std::mutex> lock(stdout_mutex);
-                std::cout << "Found key, exiting." << "\n";
-                return 0;
-            }
-        }
-
-        // Log every 1,000 batches.
-        if (i % (num_threads * 1000) == 0) {
-            const std::lock_guard<std::mutex> lock(stdout_mutex);
-            std::cout << "Progress: " << i << "/" << end_time_seconds * 1000 << "ms (" << i/1000 << " work-seconds)" << "\n";
-        }
-    }
-
-
-    const std::lock_guard<std::mutex> lock(stdout_mutex);
-    std::cout << "Failed to find key within the given parameters\n";
-
+    bruteforce(start_time_seconds, end_time_seconds, key_depth, num_threads);
 	return 0;
 }
