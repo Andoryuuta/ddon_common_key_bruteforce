@@ -125,6 +125,7 @@ inline bool bruteforce_millisecond(int ms, int key_depth) {
 
     const std::lock_guard<std::mutex> lock(stdout_mutex);
     std::cout << "Failed to find key within the given parameters\n";
+    return -1;
 }
 
 int main(int argc, char** argv) {

@@ -32,26 +32,34 @@ set(DDON_BRUTEFORCE_EXE_SOURCES
         src/camellia.c
         src/argparse.hpp
         src/main.cpp
+        src/simd_brute_force.h
         )
+
 add_executable(${DDON_BRUTEFORCE_EXE} ${DDON_BRUTEFORCE_EXE_SOURCES})
 
-if (DDON_ENABLE_SIMD)
-    target_compile_definitions(${DDON_BRUTEFORCE_EXE} PRIVATE DDON_SIMD_ENABLED)
 
+if (DDON_ENABLE_SIMD)
+    target_compile_definitions(${DDON_BRUTEFORCE_EXE} PUBLIC DDON_SIMD_ENABLED)
     # camellia_simd
     set(CAMELLIA_SIMD camellia_simd_lib)
     set(CAMELLIA_SIMD_SOURCES
+            #camellia-simd-aesni/camellia_simd.h
             camellia-simd-aesni/camellia_simd128_with_aes_instruction_set.c
-            camellia-simd-aesni/camellia_simd256_x86_aesni.c
+            #camellia-simd-aesni/camellia_simd256_x86_aesni.c
+            #camellia-simd-aesni/camellia_simd128_x86-64_aesni_avx.S
+            #camellia-simd-aesni/camellia_simd256_x86-64_aesni_avx2.S
             )
     add_library(${CAMELLIA_SIMD} STATIC ${CAMELLIA_SIMD_SOURCES})
-    target_include_directories(${CAMELLIA_SIMD} PUBLIC camellia-simd-aesni) # SYSTEM to suppress warnings
-    target_compile_options(${CAMELLIA_SIMD} PRIVATE
+    target_include_directories(${CAMELLIA_SIMD} PUBLIC camellia-simd-aesni/)
+    target_compile_options(${CAMELLIA_SIMD} PUBLIC
             -maes
             -mavx2
-            -msse4.1
+            #-msse4.1
             -mtune=native
             -march=sandybridge
             )
+    #target_link_options(${CAMELLIA_SIMD} PUBLIC
+    #        LINKER:-lcrypto
+    #        )
     target_link_libraries(${DDON_BRUTEFORCE_EXE} PUBLIC ${CAMELLIA_SIMD})
 endif ()
