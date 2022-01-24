@@ -4,20 +4,25 @@
 #define DDON_SIMD_BRUTE_FORCE_H
 
 
-#include <vector>
-#include <thread>
-#include <mutex>
-#include <string>
-#include <chrono>
+#include "ddon_random.hpp"
+
+#define USE_TRADITIONAL
+
+#ifdef USE_TRADITIONAL
+#include "camellia.h"
+#else
 
 #include "camellia_simd.h"
+
+#endif
 
 class SimdBruteForce {
 
 private:
     const int KEY_LENGTH = 32;
     const int BLOCK_SIZE = 16;
-    const int SIMD_128_SIZE = 16 * BLOCK_SIZE;
+    const int SIMD_128_SIZE = BLOCK_SIZE * 16;
+    const int KEY_LENGTH_BITS = KEY_LENGTH * 8;
     const unsigned char EXPECTED_LOGIN[5] = {0x01, 0x00, 0x00, 0x02, 0x34};
     const unsigned char EXPECTED_GAME[5] = {0x2C, 0x00, 0x00, 0x02, 0x34};
     const unsigned char KEY_SOURCE[65] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
@@ -39,14 +44,23 @@ private:
 
     void thread_unlimited_depth(int offset) {
         int key_gap = num_threads - 1;
-        unsigned char *encrypted_bytes = new unsigned char[SIMD_128_SIZE];
-        unsigned char *decrypted_bytes = new unsigned char[SIMD_128_SIZE];
         unsigned char *key_buffer = new unsigned char[KEY_LENGTH];
-        SeededXorshift128 rand;
-        struct camellia_simd_ctx ctx_simd;
+        DdonRandom rand;
         uint depth = 0;
 
+#ifdef USE_TRADITIONAL
+        KEY_TABLE_TYPE key_table;
+        unsigned char *encrypted_bytes = new unsigned char[BLOCK_SIZE];
+        unsigned char *decrypted_bytes = new unsigned char[BLOCK_SIZE];
         std::memcpy(encrypted_bytes, crack_bytes, BLOCK_SIZE);
+#else
+        unsigned char *encrypted_bytes = new unsigned char[SIMD_128_SIZE];
+        unsigned char *decrypted_bytes = new unsigned char[SIMD_128_SIZE];
+        struct camellia_simd_ctx ctx_simd;
+        std::memcpy(encrypted_bytes, crack_bytes, BLOCK_SIZE);
+#endif
+
+
         rand.Init(ms);
         for (int i = 0; i < offset; i++) {
             rand.NextRand();
@@ -59,9 +73,16 @@ private:
         }
 
         while (running.test()) {
+
+#ifdef USE_TRADITIONAL
+            Camellia_Ekeygen(KEY_LENGTH_BITS, key_buffer, key_table);
+            Camellia_DecryptBlock(KEY_LENGTH_BITS, encrypted_bytes, key_table, decrypted_bytes);
+#else
             memset(&ctx_simd, 0xff, sizeof(ctx_simd));
             camellia_keysetup_simd128(&ctx_simd, key_buffer, KEY_LENGTH);
             camellia_decrypt_16blks_simd128(&ctx_simd, decrypted_bytes, encrypted_bytes);
+#endif
+
             for (int i = 0; i < BLOCK_SIZE; i++) {
                 decrypted_bytes[i] ^= IV[i];
             }
@@ -85,6 +106,10 @@ private:
                 key_buffer[i] = KEY_SOURCE[rand.NextRand() & 0x3F];
                 depth++;
             }
+
+           if(depth % 100000 == 0){
+               std::cout << "Depth:" << depth << "\n";
+           }
         }
     }
 
@@ -92,7 +117,7 @@ private:
 public:
     explicit SimdBruteForce(int p_num_threads) {
         num_threads = p_num_threads;
-        num_threads = 3;
+        num_threads = 1;
         threads = std::vector<std::thread *>();
         running.clear();
     }
@@ -103,7 +128,6 @@ public:
         }
         threads.clear();
         running.test_and_set();
-
         ms = p_ms;
         crack_bytes = p_crack_bytes;
         expected_bytes = p_is_login ? EXPECTED_LOGIN : EXPECTED_GAME;
@@ -118,7 +142,6 @@ public:
         }
     }
 };
-
 
 #endif //DDON_SIMD_BRUTE_FORCE_H
 #endif /* DDON_SIMD_ENABLED */

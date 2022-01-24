@@ -37,6 +37,7 @@ set(DDON_BRUTEFORCE_EXE_SOURCES
         src/argparse.hpp
         src/main.cpp
         src/simd_brute_force.h
+        src/ddon_random.hpp
         )
 
 add_executable(${DDON_BRUTEFORCE_EXE} ${DDON_BRUTEFORCE_EXE_SOURCES})

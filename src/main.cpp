@@ -138,10 +138,22 @@ int main(int argc, char** argv) {
         .help("Start of PRNG seed range (in seconds)");
 
     program.add_argument("--end_second")
-        .scan<'i', int>()
-        .default_value(24 * 60 * 60) // Default is all the seconds within 24-hours.
-        .required()
-        .help("End of PRNG seed range (in seconds)");
+            .scan<'i', int>()
+            .default_value(24 * 60 * 60) // Default is all the seconds within 24-hours.
+            .required()
+            .help("End of PRNG seed range (in seconds)");
+
+    program.add_argument("--ms")
+            .scan<'i', int>()
+            .default_value(-1)
+            .required()
+            .help("Exact MS to perform bruteforce on");
+
+    program.add_argument("--login")
+            .scan<'i', int>()
+            .default_value(0)
+            .required()
+            .help("Login Server Data");
 
     program.add_argument("--key_depth")
         .scan<'i', int>()
@@ -167,6 +179,8 @@ int main(int argc, char** argv) {
 
     // Load our input parameters
     int start_time_seconds = program.get<int>("--start_second");
+    int exact_ms = program.get<int>("--ms");
+    bool is_login = program.get<int>("--login") != 0;
     int end_time_seconds = program.get<int>("--end_second");
     int key_depth = program.get<int>("--key_depth");
 
@@ -197,8 +211,15 @@ int main(int argc, char** argv) {
     }
 
 #ifdef DDON_SIMD_ENABLED
+    // 793FEF1D1A97001BF829288EB8576D10 --ms 2393 --login 1
+    // 793FEF1D1A97001BF829288EB8576D10 --ms 2393 --login 0
+    if(exact_ms < 0){
+        std::cerr << "--ms Must Be provided!\n";
+        std::cerr << program;
+        std::exit(1);
+    }
     SimdBruteForce *sbf = new SimdBruteForce(num_threads);
-    sbf->brute_force(start_time_seconds, ciphertext, true);
+    sbf->brute_force(exact_ms, ciphertext, is_login);
     return 0;
 #endif
 
