@@ -9,7 +9,9 @@
 #define USE_TRADITIONAL
 
 #ifdef USE_TRADITIONAL
+
 #include "camellia.h"
+
 #else
 
 #include "camellia_simd.h"
@@ -19,6 +21,7 @@
 class SimdBruteForce {
 
 private:
+    std::mutex stdout_mutex;
     const int KEY_LENGTH = 32;
     const int BLOCK_SIZE = 16;
     const int SIMD_128_SIZE = BLOCK_SIZE * 16;
@@ -36,16 +39,19 @@ private:
     const unsigned char *expected_bytes;
     std::atomic_flag running;
 
-    void print_key(unsigned char *key_buffer, uint depth) {
+    void print_key(unsigned char *key_buffer, uint depth, std::thread::id thread_id) {
         char *key = new char[KEY_LENGTH + 1];
         std::memcpy(key, key_buffer, KEY_LENGTH);
-        std::cout << "Key:" << key << " Depth:" << depth << "\n";
+        const std::lock_guard<std::mutex> lock(stdout_mutex);
+        std::cout << thread_id << ": Key:" << key << " Depth:" << depth << "\n";
     }
 
     void thread_unlimited_depth(int offset) {
-        int key_gap = num_threads - 1;
+        std::thread::id thread_id = std::this_thread::get_id();
+        // int key_gap = num_threads - 1;
         unsigned char *key_buffer = new unsigned char[KEY_LENGTH];
         DdonRandom rand;
+        //SeededXorshift128 rand;
         uint depth = 0;
 
 #ifdef USE_TRADITIONAL
@@ -60,7 +66,6 @@ private:
         std::memcpy(encrypted_bytes, crack_bytes, BLOCK_SIZE);
 #endif
 
-
         rand.Init(ms);
         for (int i = 0; i < offset; i++) {
             rand.NextRand();
@@ -73,7 +78,6 @@ private:
         }
 
         while (running.test()) {
-
 #ifdef USE_TRADITIONAL
             Camellia_Ekeygen(KEY_LENGTH_BITS, key_buffer, key_table);
             Camellia_DecryptBlock(KEY_LENGTH_BITS, encrypted_bytes, key_table, decrypted_bytes);
@@ -92,24 +96,21 @@ private:
                 decrypted_bytes[3] == expected_bytes[3] &&
                 decrypted_bytes[4] == expected_bytes[4]) {
                 running.clear();
-                print_key(key_buffer, depth);
+                print_key(key_buffer, depth, thread_id);
             }
 
-            for (size_t i = 0; i < KEY_LENGTH - key_gap - 1; i++) {
-                key_buffer[i] = key_buffer[i + key_gap + 1];
-            }
-            for (size_t i = 0; i < key_gap; i++) {
-                rand.NextRand();
-                depth++;
-            }
-            for (size_t i = KEY_LENGTH - key_gap - 1; i < KEY_LENGTH; i++) {
-                key_buffer[i] = KEY_SOURCE[rand.NextRand() & 0x3F];
-                depth++;
+            for (size_t i = 0; i < KEY_LENGTH; i++) {
+                if (i < KEY_LENGTH - num_threads) {
+                    key_buffer[i] = key_buffer[i + num_threads];
+                } else {
+                    key_buffer[i] = KEY_SOURCE[rand.NextRand() & 0x3F];
+                    depth++;
+                }
             }
 
-           if(depth % 100000 == 0){
-               std::cout << "Depth:" << depth << "\n";
-           }
+            if (depth % 10000000 == 0) {
+                std::cout << "Depth:" << depth << "\n";
+            }
         }
     }
 
@@ -117,7 +118,6 @@ private:
 public:
     explicit SimdBruteForce(int p_num_threads) {
         num_threads = p_num_threads;
-        num_threads = 1;
         threads = std::vector<std::thread *>();
         running.clear();
     }
