@@ -24,6 +24,15 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 
+message(Project: ${PROJECT_NAME})
+message(BuildType: ${CMAKE_BUILD_TYPE})
+message(CMAKE_CXX_COMPILER_ID: ${CMAKE_CXX_COMPILER_ID})
+message(CMAKE_SYSTEM_NAME: ${CMAKE_SYSTEM_NAME})
+
+IF (CMAKE_BUILD_TYPE MATCHES Debug)
+    set(DDON_DEBUG TRUE)
+ENDIF()
+
 # Set MSVC optimization flags
 if (MSVC)
     set(CMAKE_CXX_FLAGS "/O2 /Oi /Ot /Oy /EHsc")
@@ -41,6 +50,23 @@ set(DDON_BRUTEFORCE_EXE_SOURCES
         )
 
 add_executable(${DDON_BRUTEFORCE_EXE} ${DDON_BRUTEFORCE_EXE_SOURCES})
+
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    IF (DDON_DEBUG)
+        message([LOWL] Setting Debug Flags)
+        target_compile_options(${DDON_BRUTEFORCE_EXE} PRIVATE
+                -O0
+                -Werror
+                )
+    ELSE()
+        message([LOWL] Setting Release Flags)
+        target_compile_options(${DDON_BRUTEFORCE_EXE} PRIVATE
+                -O2
+                -Werror
+                )
+    ENDIF ()
+endif ()
 
 if (DDON_ENABLE_SIMD)
     # camellia_simd
