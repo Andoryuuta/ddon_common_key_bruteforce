@@ -1,7 +1,7 @@
 ﻿cmake_minimum_required(VERSION 3.8)
 
 set(DDON_BRUTEFORCE_EXE ddon_common_key_bruteforce)
-set(DDON_ENABLE_SIMD 1)
+set(DDON_ENABLE_SIMD 0)
 set(DDON_ENABLE_ASM 0)
 
 if (DDON_ENABLE_SIMD)
@@ -36,7 +36,7 @@ set(DDON_BRUTEFORCE_EXE_SOURCES
         src/camellia.c
         src/argparse.hpp
         src/main.cpp
-        src/simd_brute_force.h
+        src/depth_brute_force.h
         src/ddon_random.hpp
         )
 

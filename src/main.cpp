@@ -1,3 +1,5 @@
+
+#include "depth_brute_force.h"
 #include <iostream>
 #include <cstdint>
 #include <thread>
@@ -8,10 +10,6 @@
 #include "ctpl_stl.h"
 #include "argparse.hpp"
 #include "seeded_xorshift_128.hpp"
-
-#ifdef DDON_SIMD_ENABLED
-#include "simd_brute_force.h"
-#endif
 
 // Mutex for writing to stdout across multiple threads withotu conflict.
 std::mutex stdout_mutex;
@@ -210,18 +208,15 @@ int main(int argc, char** argv) {
         std::exit(1);
     }
 
-#ifdef DDON_SIMD_ENABLED
-    // 793FEF1D1A97001BF829288EB8576D10 --ms 2393 --login 1
-    // 793FEF1D1A97001BF829288EB8576D10 --ms 2393 --login 0
-    if(exact_ms < 0){
-        std::cerr << "--ms Must Be provided!\n";
-        std::cerr << program;
-        std::exit(1);
+    if (exact_ms >= 0) {
+        // try to crack an exact MS with infinite depth
+        // ex.
+        // 793FEF1D1A97001BF829288EB8576D10 --ms 2393 --login 1
+        // 793FEF1D1A97001BF829288EB8576D10 --ms 2393 --login 0
+        DepthBruteForce *sbf = new DepthBruteForce(num_threads);
+        sbf->brute_force(exact_ms, ciphertext, is_login);
+        return 0;
     }
-    SimdBruteForce *sbf = new SimdBruteForce(num_threads);
-    sbf->brute_force(exact_ms, ciphertext, is_login);
-    return 0;
-#endif
 
     bruteforce(start_time_seconds, end_time_seconds, key_depth, num_threads);
 	return 0;

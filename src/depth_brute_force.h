@@ -1,27 +1,24 @@
-#ifdef DDON_SIMD_ENABLED
+#ifndef DDON_DEPTH_BRUTE_FORCE_H
+#define DDON_DEPTH_BRUTE_FORCE_H
 
-#ifndef DDON_SIMD_BRUTE_FORCE_H
-#define DDON_SIMD_BRUTE_FORCE_H
-
+#include <iostream>
+#include <vector>
+#include <thread>
+#include <chrono>
 
 #include "ddon_random.hpp"
 
-#define USE_TRADITIONAL
-
-#ifdef USE_TRADITIONAL
-
-#include "camellia.h"
-
-#else
+#ifdef DDON_SIMD_ENABLED
 
 #include "camellia_simd.h"
 
+#else
+#include "camellia.h"
 #endif
 
-class SimdBruteForce {
+class DepthBruteForce {
 
 private:
-    std::mutex stdout_mutex;
     const int KEY_LENGTH = 32;
     const int BLOCK_SIZE = 16;
     const int SIMD_128_SIZE = BLOCK_SIZE * 16;
@@ -37,20 +34,19 @@ private:
     const unsigned char *crack_bytes;
     const unsigned char *expected_bytes;
     std::atomic_flag running;
-    template <
+
+    template<
             class result_t   = std::chrono::milliseconds,
             class clock_t    = std::chrono::steady_clock,
             class duration_t = std::chrono::milliseconds
     >
-    auto since(std::chrono::time_point<clock_t, duration_t> const& start)
-    {
+    auto since(std::chrono::time_point<clock_t, duration_t> const &start) {
         return std::chrono::duration_cast<result_t>(clock_t::now() - start);
     }
 
     void print_key(unsigned char *key_buffer, unsigned long long depth, std::thread::id thread_id) {
         char *key = new char[KEY_LENGTH + 1];
         std::memcpy(key, key_buffer, KEY_LENGTH);
-        const std::lock_guard<std::mutex> lock(stdout_mutex);
         std::cout << thread_id << ": Key:" << key << " Depth:" << depth << "\n";
     }
 
@@ -62,15 +58,15 @@ private:
         unsigned long long depth = 0;
         auto start_time = std::chrono::steady_clock::now();
 
-#ifdef USE_TRADITIONAL
-        KEY_TABLE_TYPE key_table;
-        unsigned char *encrypted_bytes = new unsigned char[BLOCK_SIZE];
-        unsigned char *decrypted_bytes = new unsigned char[BLOCK_SIZE];
-        std::memcpy(encrypted_bytes, crack_bytes, BLOCK_SIZE);
-#else
+#ifdef DDON_SIMD_ENABLED
         unsigned char *encrypted_bytes = new unsigned char[SIMD_128_SIZE];
         unsigned char *decrypted_bytes = new unsigned char[SIMD_128_SIZE];
         struct camellia_simd_ctx ctx_simd;
+        std::memcpy(encrypted_bytes, crack_bytes, BLOCK_SIZE);
+#else
+        KEY_TABLE_TYPE key_table;
+        unsigned char *encrypted_bytes = new unsigned char[BLOCK_SIZE];
+        unsigned char *decrypted_bytes = new unsigned char[BLOCK_SIZE];
         std::memcpy(encrypted_bytes, crack_bytes, BLOCK_SIZE);
 #endif
 
@@ -86,13 +82,13 @@ private:
         }
 
         while (running.test()) {
-#ifdef USE_TRADITIONAL
-            Camellia_Ekeygen(KEY_LENGTH_BITS, key_buffer, key_table);
-            Camellia_DecryptBlock(KEY_LENGTH_BITS, encrypted_bytes, key_table, decrypted_bytes);
-#else
+#ifdef DDON_SIMD_ENABLED
             memset(&ctx_simd, 0xff, sizeof(ctx_simd));
             camellia_keysetup_simd128(&ctx_simd, key_buffer, KEY_LENGTH);
             camellia_decrypt_16blks_simd128(&ctx_simd, decrypted_bytes, encrypted_bytes);
+#else
+            Camellia_Ekeygen(KEY_LENGTH_BITS, key_buffer, key_table);
+            Camellia_DecryptBlock(KEY_LENGTH_BITS, encrypted_bytes, key_table, decrypted_bytes);
 #endif
 
             for (int i = 0; i < BLOCK_SIZE; i++) {
@@ -124,7 +120,7 @@ private:
 
 
 public:
-    explicit SimdBruteForce(int p_num_threads) {
+    explicit DepthBruteForce(int p_num_threads) {
         num_threads = p_num_threads;
         threads = std::vector<std::thread *>();
         running.clear();
@@ -141,7 +137,7 @@ public:
         expected_bytes = p_is_login ? EXPECTED_LOGIN : EXPECTED_GAME;
 
         for (int i = 0; i < num_threads; i++) {
-            std::thread *thread = new std::thread(&SimdBruteForce::thread_unlimited_depth, this, i);
+            std::thread *thread = new std::thread(&DepthBruteForce::thread_unlimited_depth, this, i);
             threads.push_back(thread);
         }
 
@@ -151,5 +147,4 @@ public:
     }
 };
 
-#endif //DDON_SIMD_BRUTE_FORCE_H
-#endif /* DDON_SIMD_ENABLED */
+#endif //DDON_DEPTH_BRUTE_FORCE_H
