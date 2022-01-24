@@ -31,15 +31,23 @@ private:
     const unsigned char KEY_SOURCE[65] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     const unsigned char IV[16] = {0x24, 0x63, 0x62, 0x4D, 0x36, 0x57, 0x50, 0x29, 0x61, 0x58, 0x3D, 0x25, 0x4A, 0x5E,
                                   0x7A, 0x41};
-
     std::vector<std::thread *> threads;
     int num_threads;
     int ms;
     const unsigned char *crack_bytes;
     const unsigned char *expected_bytes;
     std::atomic_flag running;
+    template <
+            class result_t   = std::chrono::milliseconds,
+            class clock_t    = std::chrono::steady_clock,
+            class duration_t = std::chrono::milliseconds
+    >
+    auto since(std::chrono::time_point<clock_t, duration_t> const& start)
+    {
+        return std::chrono::duration_cast<result_t>(clock_t::now() - start);
+    }
 
-    void print_key(unsigned char *key_buffer, uint depth, std::thread::id thread_id) {
+    void print_key(unsigned char *key_buffer, unsigned long long depth, std::thread::id thread_id) {
         char *key = new char[KEY_LENGTH + 1];
         std::memcpy(key, key_buffer, KEY_LENGTH);
         const std::lock_guard<std::mutex> lock(stdout_mutex);
@@ -48,11 +56,11 @@ private:
 
     void thread_unlimited_depth(int offset) {
         std::thread::id thread_id = std::this_thread::get_id();
-        // int key_gap = num_threads - 1;
         unsigned char *key_buffer = new unsigned char[KEY_LENGTH];
         DdonRandom rand;
         //SeededXorshift128 rand;
-        uint depth = 0;
+        unsigned long long depth = 0;
+        auto start_time = std::chrono::steady_clock::now();
 
 #ifdef USE_TRADITIONAL
         KEY_TABLE_TYPE key_table;
@@ -109,7 +117,7 @@ private:
             }
 
             if (depth % 10000000 == 0) {
-                std::cout << "Depth:" << depth << "\n";
+                std::cout << "Depth:" << depth << " Elapsed(ms)=" << since(start_time).count() << "\n";
             }
         }
     }
