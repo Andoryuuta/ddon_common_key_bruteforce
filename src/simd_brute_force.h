@@ -17,6 +17,7 @@ class SimdBruteForce {
 private:
     const int KEY_LENGTH = 32;
     const int BLOCK_SIZE = 16;
+    const int SIMD_128_SIZE = 16 * BLOCK_SIZE;
     const unsigned char EXPECTED_LOGIN[5] = {0x01, 0x00, 0x00, 0x02, 0x34};
     const unsigned char EXPECTED_GAME[5] = {0x2C, 0x00, 0x00, 0x02, 0x34};
     const unsigned char KEY_SOURCE[65] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
@@ -30,28 +31,37 @@ private:
     const unsigned char *expected_bytes;
     std::atomic_flag running;
 
+    void print_key(unsigned char *key_buffer, uint depth) {
+        char *key = new char[KEY_LENGTH + 1];
+        std::memcpy(key, key_buffer, KEY_LENGTH);
+        std::cout << "Key:" << key << " Depth:" << depth << "\n";
+    }
+
     void thread_unlimited_depth(int offset) {
-
-        unsigned char *decrypted_bytes = new unsigned char[KEY_LENGTH];
+        int key_gap = num_threads - 1;
+        unsigned char *encrypted_bytes = new unsigned char[SIMD_128_SIZE];
+        unsigned char *decrypted_bytes = new unsigned char[SIMD_128_SIZE];
         unsigned char *key_buffer = new unsigned char[KEY_LENGTH];
-
         SeededXorshift128 rand;
-        rand.Init(ms);
+        struct camellia_simd_ctx ctx_simd;
+        uint depth = 0;
 
+        std::memcpy(encrypted_bytes, crack_bytes, BLOCK_SIZE);
+        rand.Init(ms);
         for (int i = 0; i < offset; i++) {
             rand.NextRand();
+            depth++;
+        }
+
+        for (size_t i = 0; i < KEY_LENGTH; i++) {
+            key_buffer[i] = KEY_SOURCE[rand.NextRand() & 0x3F];
+            depth++;
         }
 
         while (running.test()) {
-            for (size_t i = 0; i < KEY_LENGTH; i++) {
-                key_buffer[i] = KEY_SOURCE[rand.NextRand() & 0x3F];
-            }
-            for (int i = 0; i < num_threads; i++) {
-                rand.NextRand();
-            }
-            struct camellia_simd_ctx ctx_simd{};
+            memset(&ctx_simd, 0xff, sizeof(ctx_simd));
             camellia_keysetup_simd128(&ctx_simd, key_buffer, KEY_LENGTH);
-            camellia_decrypt_16blks_simd128(&ctx_simd, decrypted_bytes, crack_bytes);
+            camellia_decrypt_16blks_simd128(&ctx_simd, decrypted_bytes, encrypted_bytes);
             for (int i = 0; i < BLOCK_SIZE; i++) {
                 decrypted_bytes[i] ^= IV[i];
             }
@@ -61,15 +71,28 @@ private:
                 decrypted_bytes[3] == expected_bytes[3] &&
                 decrypted_bytes[4] == expected_bytes[4]) {
                 running.clear();
-                // found it
+                print_key(key_buffer, depth);
+            }
+
+            for (size_t i = 0; i < KEY_LENGTH - key_gap - 1; i++) {
+                key_buffer[i] = key_buffer[i + key_gap + 1];
+            }
+            for (size_t i = 0; i < key_gap; i++) {
+                rand.NextRand();
+                depth++;
+            }
+            for (size_t i = KEY_LENGTH - key_gap - 1; i < KEY_LENGTH; i++) {
+                key_buffer[i] = KEY_SOURCE[rand.NextRand() & 0x3F];
+                depth++;
             }
         }
     }
 
+
 public:
     explicit SimdBruteForce(int p_num_threads) {
         num_threads = p_num_threads;
-        num_threads = 1;
+        num_threads = 3;
         threads = std::vector<std::thread *>();
         running.clear();
     }
