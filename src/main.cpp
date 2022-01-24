@@ -1,3 +1,5 @@
+
+#include "depth_brute_force.h"
 #include <iostream>
 #include <cstdint>
 #include <thread>
@@ -46,7 +48,7 @@ inline bool bruteforce_millisecond(int ms, int key_depth) {
     // Go over the key buffer and try every index as as the starting position of the key.
     for (size_t i = 0; i < key_buffer.size()-KEY_LENGTH; i++)
     {
-        
+
         Camellia_Ekeygen(KEY_BIT_LENGTH, (unsigned char*)(key_buffer.data()+i), keytable);
         Camellia_DecryptBlock(KEY_BIT_LENGTH, ciphertext, keytable, plaintext);
 
@@ -81,73 +83,7 @@ inline bool bruteforce_millisecond(int ms, int key_depth) {
     return false;
 }
 
-int main(int argc, char** argv) {
-    argparse::ArgumentParser program("ddon_common_key_bruteforce");
-
-    program.add_argument("--start_second")
-        .scan<'i', int>()
-        .default_value(0)
-        .required()
-        .help("Start of PRNG seed range (in seconds)");
-
-    program.add_argument("--end_second")
-        .scan<'i', int>()
-        .default_value(24 * 60 * 60) // Default is all the seconds within 24-hours.
-        .required()
-        .help("End of PRNG seed range (in seconds)");
-
-    program.add_argument("--key_depth")
-        .scan<'i', int>()
-        .default_value(1024)
-        .required()
-        .help("How many key chars are generated per millisecond that is bruteforced");
-
-    program.add_argument("--thread_limit")
-        .scan<'i', int>()
-        .help("Maximum amount of CPU threads used for bruteforcing");
-
-    program.add_argument("payload")
-        .help("The payload to be bruteforced against.\n\t\tThis should be first 16 bytes of the second packet sent from the login server (do not include the 0060 prefix)");
-
-    try {
-        program.parse_args(argc, argv);
-    }
-    catch (const std::runtime_error& err) {
-        std::cerr << err.what() << "\n";
-        std::cerr << program;
-        std::exit(1);
-    }
-
-    // Load our input parameters
-    int start_time_seconds = program.get<int>("--start_second");
-    int end_time_seconds = program.get<int>("--end_second");
-    int key_depth = program.get<int>("--key_depth");
-
-    int num_threads = std::thread::hardware_concurrency();
-    if (auto fn = program.present<int>("--thread_limit")) {
-        num_threads = *fn;
-    }
-
-    if (program.get<std::string>("payload").length() == 16 * 2) {
-        // Convert hex string to std::vector<uint8_t>;
-        auto payload_str = program.get<std::string>("payload");
-        std::vector<uint8_t> payload;
-         for (size_t i = 0; i < payload_str.length(); i += 2)
-        {
-            std::istringstream ss(payload_str.substr(i, 2));
-            uint32_t x;
-            ss >> std::hex >> x;
-            payload.push_back((uint8_t)x);
-        }
-
-        std::memcpy(ciphertext, payload.data(), sizeof(ciphertext));
-    }
-    else
-    {
-        std::cerr << "Payload must be exactly 16 hex digits!\n";
-        std::cerr << program;
-        std::exit(1);
-    }
+ int bruteforce(int start_time_seconds, int end_time_seconds, int key_depth, int num_threads) {
 
     std::cout << "Starting bruteforcer with " << num_threads << " threads. Progress will be reported periodically.\n";
 
@@ -187,6 +123,101 @@ int main(int argc, char** argv) {
 
     const std::lock_guard<std::mutex> lock(stdout_mutex);
     std::cout << "Failed to find key within the given parameters\n";
+    return -1;
+}
 
+int main(int argc, char** argv) {
+    argparse::ArgumentParser program("ddon_common_key_bruteforce");
+
+    program.add_argument("--start_second")
+        .scan<'i', int>()
+        .default_value(0)
+        .required()
+        .help("Start of PRNG seed range (in seconds)");
+
+    program.add_argument("--end_second")
+            .scan<'i', int>()
+            .default_value(24 * 60 * 60) // Default is all the seconds within 24-hours.
+            .required()
+            .help("End of PRNG seed range (in seconds)");
+
+    program.add_argument("--ms")
+            .scan<'i', int>()
+            .default_value(-1)
+            .required()
+            .help("Exact MS to perform bruteforce on");
+
+    program.add_argument("--login")
+            .scan<'i', int>()
+            .default_value(0)
+            .required()
+            .help("Login Server Data");
+
+    program.add_argument("--key_depth")
+        .scan<'i', int>()
+        .default_value(1024)
+        .required()
+        .help("How many key chars are generated per millisecond that is bruteforced");
+
+    program.add_argument("--thread_limit")
+        .scan<'i', int>()
+        .help("Maximum amount of CPU threads used for bruteforcing");
+
+    program.add_argument("payload")
+        .help("The payload to be bruteforced against.\n\t\tThis should be first 16 bytes of the second packet sent from the login server (do not include the 0060 prefix)");
+
+    try {
+        program.parse_args(argc, argv);
+    }
+    catch (const std::runtime_error& err) {
+        std::cerr << err.what() << "\n";
+        std::cerr << program;
+        std::exit(1);
+    }
+
+    // Load our input parameters
+    int start_time_seconds = program.get<int>("--start_second");
+    int exact_ms = program.get<int>("--ms");
+    bool is_login = program.get<int>("--login") != 0;
+    int end_time_seconds = program.get<int>("--end_second");
+    int key_depth = program.get<int>("--key_depth");
+
+    int num_threads = std::thread::hardware_concurrency();
+    if (auto fn = program.present<int>("--thread_limit")) {
+        num_threads = *fn;
+    }
+
+    if (program.get<std::string>("payload").length() == 16 * 2) {
+        // Convert hex string to std::vector<uint8_t>;
+        auto payload_str = program.get<std::string>("payload");
+        std::vector<uint8_t> payload;
+         for (size_t i = 0; i < payload_str.length(); i += 2)
+        {
+            std::istringstream ss(payload_str.substr(i, 2));
+            uint32_t x;
+            ss >> std::hex >> x;
+            payload.push_back((uint8_t)x);
+        }
+
+        std::memcpy(ciphertext, payload.data(), sizeof(ciphertext));
+    }
+    else
+    {
+        std::cerr << "Payload must be exactly 16 hex digits!\n";
+        std::cerr << program;
+        std::exit(1);
+    }
+
+    if (exact_ms >= 0) {
+        // try to crack an exact MS with infinite depth
+        // ex.
+        // 793FEF1D1A97001BF829288EB8576D10 --ms 2393 --login 1
+        // 793FEF1D1A97001BF829288EB8576D10 --ms 2393 --login 0
+        DepthBruteForce *sbf = new DepthBruteForce(num_threads);
+        sbf->brute_force(exact_ms, ciphertext, is_login);
+        return 0;
+    }
+
+    bruteforce(start_time_seconds, end_time_seconds, key_depth, num_threads);
 	return 0;
 }
