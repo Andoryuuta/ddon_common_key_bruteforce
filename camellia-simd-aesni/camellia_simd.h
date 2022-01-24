@@ -7,6 +7,11 @@
 #ifndef _CAMELLIA_SIMD_H_
 #define _CAMELLIA_SIMD_H_
 
+#ifdef  __cplusplus
+extern "C" {
+#endif
+
+
 #include <stdint.h>
 
 #define CAMELLIA_TABLE_BYTE_LEN 272
@@ -40,5 +45,9 @@ void camellia_encrypt_32blks_simd256(struct camellia_simd_ctx *ctx, void *out,
 				     const void *in);
 void camellia_decrypt_32blks_simd256(struct camellia_simd_ctx *ctx, void *out,
 				     const void *in);
+
+#ifdef  __cplusplus
+}
+#endif
 
 #endif /* _CAMELLIA_SIMD_H_ */

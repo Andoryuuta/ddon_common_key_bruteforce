@@ -2,9 +2,13 @@
 
 set(DDON_BRUTEFORCE_EXE ddon_common_key_bruteforce)
 set(DDON_ENABLE_SIMD 1)
+set(DDON_ENABLE_ASM 0)
 
 if (DDON_ENABLE_SIMD)
     message("SIMD enabled")
+endif ()
+if (DDON_ENABLE_ASM)
+    message("ASM enabled")
 endif ()
 
 project(${DDON_BRUTEFORCE_EXE})
@@ -37,18 +41,23 @@ set(DDON_BRUTEFORCE_EXE_SOURCES
 
 add_executable(${DDON_BRUTEFORCE_EXE} ${DDON_BRUTEFORCE_EXE_SOURCES})
 
-
 if (DDON_ENABLE_SIMD)
-    target_compile_definitions(${DDON_BRUTEFORCE_EXE} PUBLIC DDON_SIMD_ENABLED)
     # camellia_simd
+    target_compile_definitions(${DDON_BRUTEFORCE_EXE} PUBLIC DDON_SIMD_ENABLED)
     set(CAMELLIA_SIMD camellia_simd_lib)
-    set(CAMELLIA_SIMD_SOURCES
-            #camellia-simd-aesni/camellia_simd.h
-            camellia-simd-aesni/camellia_simd128_with_aes_instruction_set.c
-            #camellia-simd-aesni/camellia_simd256_x86_aesni.c
-            #camellia-simd-aesni/camellia_simd128_x86-64_aesni_avx.S
-            #camellia-simd-aesni/camellia_simd256_x86-64_aesni_avx2.S
-            )
+
+    if (DDON_ENABLE_ASM)
+        enable_language(ASM)
+        set(CAMELLIA_SIMD_SOURCES
+                camellia-simd-aesni/camellia_simd128_x86-64_aesni_avx.S
+                )
+    else ()
+        set(CAMELLIA_SIMD_SOURCES
+                camellia-simd-aesni/camellia_simd128_with_aes_instruction_set.c
+                )
+    endif ()
+
+
     add_library(${CAMELLIA_SIMD} STATIC ${CAMELLIA_SIMD_SOURCES})
     target_include_directories(${CAMELLIA_SIMD} PUBLIC camellia-simd-aesni/)
     target_compile_options(${CAMELLIA_SIMD} PUBLIC
